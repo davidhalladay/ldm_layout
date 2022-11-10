@@ -1,0 +1,148 @@
+model:
+  base_learning_rate: 1.e-6   # set to target_lr by starting main.py with '--scale_lr False'
+  target: ldm.models.diffusion.ddpm.LatentDiffusion
+  params:
+    first_stage_key: image
+    cond_stage_key: objects_bbox
+    linear_start: 0.0015
+    linear_end: 0.0205
+    num_timesteps_cond: 1
+    log_every_t: 20
+    timesteps: 1000
+    loss_type: l1
+    image_size: 32
+    channels: 4
+    cond_stage_trainable: true
+    conditioning_key: crossattn
+    scale_by_std: True
+    monitor: 'val/loss_simple_ema'
+    unet_config:
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+      params:
+        image_size: 32
+        in_channels: 4
+        out_channels: 4
+        model_channels: 192
+        attention_resolutions:
+        - 8
+        - 4
+        - 2
+        num_res_blocks: 2
+        channel_mult:
+        - 1
+        - 2
+        - 4
+        num_head_channels: 32
+        use_spatial_transformer: true
+        transformer_depth: 2
+        context_dim: 512
+
+    first_stage_config:
+      target: taming.models.vqgan.VQModelInterface
+      params:
+        ckpt_path: exp/vqgan/vq-f8/model.ckpt  # https://heibox.uni-heidelberg.de/f/78dea9589974474c97c1/
+        embed_dim: 4
+        n_embed: 16384
+        ddconfig:
+          double_z: False
+          z_channels: 4
+          resolution: 256
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult:
+          - 1
+          - 2
+          - 2
+          - 4
+          num_res_blocks: 2
+          attn_resolutions:
+          - 32
+          dropout: 0.0
+        vitconfig:
+          embed_size: 256
+        lossconfig:
+          target: taming.modules.losses.DummyLoss
+
+    cond_stage_config:
+      target: ldm.modules.encoders.modules.BERTEmbedder
+      params:
+        n_embed: 512
+        n_layer: 16
+        vocab_size: 16384
+        max_seq_len: 92
+        use_tokenizer: False
+        
+    plot_sample: False 
+    plot_inpaint: False 
+    plot_denoise_rows: False 
+    plot_progressive_rows: False
+    plot_diffusion_rows: False
+    plot_quantize_denoised: True
+
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 4
+    train:
+      target: taming.data.annotated_objects_coco.AnnotatedObjectsCoco
+      params:
+        data_path: ../datasets/coco/2017  # substitute with path to full dataset
+        img_id_file: ../datasets/coco/2017/annotations/deprecated-challenge2017/train-ids.txt
+        split: train
+        keys: [image, objects_bbox, file_name, annotations]
+        no_tokens: 1024
+        target_image_size: 256
+        min_object_area: 0.02
+        min_objects_per_image: 3
+        max_objects_per_image: 8
+        crop_method: center
+        random_flip: True
+        use_group_parameter: true
+        encode_crop: true
+    validation:
+      target: taming.data.annotated_objects_coco.AnnotatedObjectsCoco
+      params:
+        data_path: ../datasets/coco/2017  # substitute with path to full dataset
+        img_id_file: ../datasets/coco/2017/annotations/deprecated-challenge2017/val-ids.txt
+        split: validation
+        keys: [image, objects_bbox, file_name, annotations]
+        no_tokens: 1024
+        target_image_size: 256
+        min_object_area: 0.02
+        min_objects_per_image: 3
+        max_objects_per_image: 8
+        crop_method: center
+        random_flip: false
+        use_group_parameter: true
+        encode_crop: true
+    test:
+      target: taming.data.annotated_objects_coco.AnnotatedObjectsCoco
+      params:
+        data_path: ../datasets/coco/2017  # substitute with path to full dataset
+        img_id_file: ../datasets/coco/2017/annotations/deprecated-challenge2017/val-ids.txt
+        split: validation
+        keys: [image, objects_bbox, file_name, annotations]
+        no_tokens: 1024
+        target_image_size: 256
+        min_object_area: 0.02
+        min_objects_per_image: 3
+        max_objects_per_image: 8
+        crop_method: center
+        random_flip: false
+        use_group_parameter: true
+        encode_crop: true
+
+lightning:
+  callbacks:
+    image_logger:
+      target: main.ImageLogger
+      params:
+        batch_frequency: 1000
+        max_images: 99
+        increase_log_steps: False
+
+  trainer:
+    benchmark: True
+    max_epochs: 300
+
